@@ -1,0 +1,681 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>ARIA — Chatbot with Context Memory</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=DM+Mono:ital,wght@0,300;0,400;1,300&family=DM+Sans:wght@300;400;500&display=swap" rel="stylesheet" />
+  <style>
+    *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
+
+    :root {
+      --bg: #080810;
+      --surface: #0f0f1a;
+      --card: #13131f;
+      --border: rgba(255,255,255,0.07);
+      --accent: #7c6cff;
+      --accent2: #ff6cb4;
+      --accent3: #45e5b8;
+      --text: #e8e8f0;
+      --muted: #6b6b82;
+      --mono: 'DM Mono', monospace;
+      --sans: 'DM Sans', sans-serif;
+      --display: 'Syne', sans-serif;
+    }
+
+    html { scroll-behavior: smooth; }
+
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: var(--sans);
+      overflow-x: hidden;
+    }
+
+    /* NOISE OVERLAY */
+    body::before {
+      content: '';
+      position: fixed;
+      inset: 0;
+      background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.04'/%3E%3C/svg%3E");
+      pointer-events: none;
+      z-index: 1000;
+      opacity: 0.4;
+    }
+
+    /* NAV */
+    nav {
+      position: fixed;
+      top: 0; left: 0; right: 0;
+      z-index: 100;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 1.25rem 3rem;
+      border-bottom: 1px solid var(--border);
+      backdrop-filter: blur(20px);
+      background: rgba(8,8,16,0.7);
+    }
+
+    .nav-logo {
+      font-family: var(--display);
+      font-weight: 800;
+      font-size: 1.3rem;
+      letter-spacing: -0.02em;
+      color: var(--text);
+    }
+
+    .nav-logo span { color: var(--accent); }
+
+    .nav-links { display: flex; gap: 2rem; align-items: center; }
+
+    .nav-links a {
+      font-family: var(--mono);
+      font-size: 0.75rem;
+      color: var(--muted);
+      text-decoration: none;
+      letter-spacing: 0.05em;
+      transition: color 0.2s;
+    }
+
+    .nav-links a:hover { color: var(--text); }
+
+    .nav-cta {
+      background: var(--accent) !important;
+      color: #fff !important;
+      padding: 0.5rem 1.25rem !important;
+      border-radius: 6px;
+      font-family: var(--mono) !important;
+      font-size: 0.75rem !important;
+      letter-spacing: 0.05em !important;
+      transition: opacity 0.2s !important;
+    }
+
+    .nav-cta:hover { opacity: 0.85 !important; }
+
+    /* HERO */
+    .hero {
+      min-height: 100vh;
+      display: grid;
+      place-items: center;
+      padding: 8rem 3rem 5rem;
+      position: relative;
+      overflow: hidden;
+    }
+
+    /* Gradient orbs */
+    .orb {
+      position: absolute;
+      border-radius: 50%;
+      filter: blur(120px);
+      pointer-events: none;
+      opacity: 0.25;
+    }
+    .orb-1 { width: 600px; height: 600px; background: var(--accent); top: -100px; left: -150px; }
+    .orb-2 { width: 400px; height: 400px; background: var(--accent2); bottom: 0; right: -100px; }
+    .orb-3 { width: 300px; height: 300px; background: var(--accent3); top: 40%; left: 55%; }
+
+    .hero-inner {
+      max-width: 900px;
+      width: 100%;
+      position: relative;
+      z-index: 2;
+    }
+
+    .hero-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.5rem;
+      background: rgba(124,108,255,0.1);
+      border: 1px solid rgba(124,108,255,0.3);
+      color: var(--accent);
+      font-family: var(--mono);
+      font-size: 0.72rem;
+      letter-spacing: 0.08em;
+      padding: 0.4rem 0.9rem;
+      border-radius: 100px;
+      margin-bottom: 2rem;
+      animation: fadeUp 0.6s ease both;
+    }
+
+    .badge-dot {
+      width: 6px; height: 6px;
+      background: var(--accent);
+      border-radius: 50%;
+      animation: pulse 2s infinite;
+    }
+
+    @keyframes pulse {
+      0%, 100% { opacity: 1; transform: scale(1); }
+      50% { opacity: 0.5; transform: scale(0.8); }
+    }
+
+    h1 {
+      font-family: var(--display);
+      font-weight: 800;
+      font-size: clamp(3rem, 8vw, 6rem);
+      line-height: 0.95;
+      letter-spacing: -0.04em;
+      margin-bottom: 1.5rem;
+      animation: fadeUp 0.7s ease 0.1s both;
+    }
+
+    h1 .line-2 {
+      display: block;
+      background: linear-gradient(135deg, var(--accent) 0%, var(--accent2) 50%, var(--accent3) 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+    }
+
+    .hero-desc {
+      font-size: 1.1rem;
+      color: var(--muted);
+      line-height: 1.7;
+      max-width: 600px;
+      margin-bottom: 2.5rem;
+      animation: fadeUp 0.7s ease 0.2s both;
+    }
+
+    .hero-actions {
+      display: flex;
+      gap: 1rem;
+      flex-wrap: wrap;
+      animation: fadeUp 0.7s ease 0.3s both;
+    }
+
+    .btn-primary {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.5rem;
+      background: var(--accent);
+      color: #fff;
+      text-decoration: none;
+      padding: 0.85rem 2rem;
+      border-radius: 8px;
+      font-family: var(--display);
+      font-weight: 600;
+      font-size: 0.95rem;
+      transition: transform 0.2s, box-shadow 0.2s;
+    }
+
+    .btn-primary:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 10px 40px rgba(124,108,255,0.35);
+    }
+
+    .btn-secondary {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.5rem;
+      background: transparent;
+      color: var(--text);
+      text-decoration: none;
+      padding: 0.85rem 2rem;
+      border-radius: 8px;
+      border: 1px solid var(--border);
+      font-family: var(--display);
+      font-weight: 600;
+      font-size: 0.95rem;
+      transition: border-color 0.2s, background 0.2s;
+    }
+
+    .btn-secondary:hover {
+      border-color: rgba(255,255,255,0.2);
+      background: rgba(255,255,255,0.04);
+    }
+
+    /* TERMINAL WINDOW */
+    .terminal-wrapper {
+      margin-top: 4rem;
+      animation: fadeUp 0.7s ease 0.4s both;
+    }
+
+    .terminal {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      overflow: hidden;
+      max-width: 720px;
+    }
+
+    .terminal-bar {
+      background: var(--surface);
+      padding: 0.8rem 1rem;
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .dot { width: 12px; height: 12px; border-radius: 50%; }
+    .dot-r { background: #ff5f57; }
+    .dot-y { background: #febc2e; }
+    .dot-g { background: #28c840; }
+
+    .terminal-title {
+      font-family: var(--mono);
+      font-size: 0.72rem;
+      color: var(--muted);
+      margin-left: auto;
+      margin-right: auto;
+    }
+
+    .terminal-body {
+      padding: 1.5rem;
+      font-family: var(--mono);
+      font-size: 0.8rem;
+      line-height: 2;
+    }
+
+    .t-comment { color: #4a4a6a; }
+    .t-keyword { color: var(--accent); }
+    .t-string { color: var(--accent3); }
+    .t-fn { color: var(--accent2); }
+    .t-var { color: #ffd080; }
+    .t-num { color: #ff9060; }
+
+    /* FEATURES SECTION */
+    .section {
+      padding: 6rem 3rem;
+      max-width: 1100px;
+      margin: 0 auto;
+    }
+
+    .section-label {
+      font-family: var(--mono);
+      font-size: 0.72rem;
+      letter-spacing: 0.12em;
+      color: var(--accent);
+      text-transform: uppercase;
+      margin-bottom: 1rem;
+    }
+
+    .section-title {
+      font-family: var(--display);
+      font-weight: 800;
+      font-size: clamp(2rem, 4vw, 3rem);
+      letter-spacing: -0.03em;
+      line-height: 1.1;
+      margin-bottom: 1rem;
+    }
+
+    .section-sub {
+      color: var(--muted);
+      max-width: 520px;
+      line-height: 1.7;
+      margin-bottom: 3rem;
+    }
+
+    .features-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+      gap: 1.5px;
+      border: 1.5px solid var(--border);
+      border-radius: 16px;
+      overflow: hidden;
+    }
+
+    .feature-card {
+      background: var(--card);
+      padding: 2rem;
+      transition: background 0.2s;
+    }
+
+    .feature-card:hover { background: #171726; }
+
+    .feature-icon {
+      font-size: 1.5rem;
+      margin-bottom: 1rem;
+    }
+
+    .feature-title {
+      font-family: var(--display);
+      font-weight: 700;
+      font-size: 1.05rem;
+      margin-bottom: 0.5rem;
+    }
+
+    .feature-desc {
+      font-size: 0.85rem;
+      color: var(--muted);
+      line-height: 1.6;
+    }
+
+    .feature-tag {
+      display: inline-block;
+      margin-top: 1rem;
+      font-family: var(--mono);
+      font-size: 0.65rem;
+      letter-spacing: 0.06em;
+      padding: 0.25rem 0.6rem;
+      border-radius: 4px;
+      background: rgba(124,108,255,0.12);
+      color: var(--accent);
+    }
+
+    /* HOW IT WORKS */
+    .how-section {
+      padding: 6rem 3rem;
+      background: var(--surface);
+      border-top: 1px solid var(--border);
+      border-bottom: 1px solid var(--border);
+    }
+
+    .how-inner { max-width: 1100px; margin: 0 auto; }
+
+    .steps {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+      gap: 2rem;
+      margin-top: 3rem;
+    }
+
+    .step {
+      position: relative;
+    }
+
+    .step-num {
+      font-family: var(--display);
+      font-weight: 800;
+      font-size: 3.5rem;
+      color: rgba(124,108,255,0.12);
+      line-height: 1;
+      margin-bottom: 0.75rem;
+    }
+
+    .step-title {
+      font-family: var(--display);
+      font-weight: 700;
+      font-size: 1rem;
+      margin-bottom: 0.4rem;
+    }
+
+    .step-desc {
+      font-size: 0.83rem;
+      color: var(--muted);
+      line-height: 1.6;
+    }
+
+    /* TECH STACK */
+    .stack-section {
+      padding: 6rem 3rem;
+      max-width: 1100px;
+      margin: 0 auto;
+    }
+
+    .stack-grid {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.75rem;
+      margin-top: 2rem;
+    }
+
+    .stack-pill {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      background: var(--card);
+      border: 1px solid var(--border);
+      padding: 0.6rem 1.1rem;
+      border-radius: 100px;
+      font-family: var(--mono);
+      font-size: 0.78rem;
+      color: var(--text);
+      transition: border-color 0.2s, transform 0.2s;
+    }
+
+    .stack-pill:hover {
+      border-color: rgba(124,108,255,0.4);
+      transform: translateY(-2px);
+    }
+
+    .pill-dot {
+      width: 8px; height: 8px;
+      border-radius: 50%;
+    }
+
+    /* CTA BANNER */
+    .cta-section {
+      padding: 6rem 3rem;
+      text-align: center;
+      position: relative;
+      overflow: hidden;
+    }
+
+    .cta-bg {
+      position: absolute;
+      inset: 0;
+      background: radial-gradient(ellipse at 50% 0%, rgba(124,108,255,0.15) 0%, transparent 70%);
+    }
+
+    .cta-title {
+      font-family: var(--display);
+      font-weight: 800;
+      font-size: clamp(2.5rem, 5vw, 4rem);
+      letter-spacing: -0.04em;
+      margin-bottom: 1rem;
+      position: relative;
+    }
+
+    .cta-sub {
+      color: var(--muted);
+      font-size: 1rem;
+      margin-bottom: 2.5rem;
+      position: relative;
+    }
+
+    /* FOOTER */
+    footer {
+      border-top: 1px solid var(--border);
+      padding: 2rem 3rem;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      font-family: var(--mono);
+      font-size: 0.72rem;
+      color: var(--muted);
+    }
+
+    @keyframes fadeUp {
+      from { opacity: 0; transform: translateY(24px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+
+    /* Divider line */
+    .divider {
+      height: 1px;
+      background: var(--border);
+    }
+  </style>
+</head>
+<body>
+
+<nav>
+  <div class="nav-logo">ARI<span>A</span></div>
+  <div class="nav-links">
+    <a href="#features">Features</a>
+    <a href="#how">How it works</a>
+    <a href="#stack">Stack</a>
+    <a href="/chat" class="nav-cta">Launch Chat →</a>
+  </div>
+</nav>
+
+<!-- HERO -->
+<section class="hero">
+  <div class="orb orb-1"></div>
+  <div class="orb orb-2"></div>
+  <div class="orb orb-3"></div>
+
+  <div class="hero-inner">
+    <div class="hero-badge">
+      <span class="badge-dot"></span>
+      AI Internship Capstone Project — SuprMentr × VTU
+    </div>
+
+    <h1>
+      Meet ARIA
+      <span class="line-2">Context-Aware AI.</span>
+    </h1>
+
+    <p class="hero-desc">
+      An intelligent conversational assistant that truly remembers. Built from scratch using Python, Flask, and the Anthropic Claude API — applying everything learned in 16 weeks of AI training.
+    </p>
+
+    <div class="hero-actions">
+      <a href="/chat" class="btn-primary">
+        Start Chatting
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
+      </a>
+      <a href="https://github.com/Abhishek0086/Chatbot-With-ContextMemory" target="_blank" class="btn-secondary">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M12 0C5.374 0 0 5.373 0 12c0 5.302 3.438 9.8 8.207 11.387.599.111.793-.261.793-.577v-2.234c-3.338.726-4.033-1.416-4.033-1.416-.546-1.387-1.333-1.756-1.333-1.756-1.089-.745.083-.729.083-.729 1.205.084 1.839 1.237 1.839 1.237 1.07 1.834 2.807 1.304 3.492.997.107-.775.418-1.305.762-1.604-2.665-.305-5.467-1.334-5.467-5.931 0-1.311.469-2.381 1.236-3.221-.124-.303-.535-1.524.117-3.176 0 0 1.008-.322 3.301 1.23A11.509 11.509 0 0112 5.803c1.02.005 2.047.138 3.006.404 2.291-1.552 3.297-1.23 3.297-1.23.653 1.653.242 2.874.118 3.176.77.84 1.235 1.911 1.235 3.221 0 4.609-2.807 5.624-5.479 5.921.43.372.823 1.102.823 2.222v3.293c0 .319.192.694.801.576C20.566 21.797 24 17.3 24 12c0-6.627-5.373-12-12-12z"/></svg>
+        View Source
+      </a>
+    </div>
+
+    <!-- Terminal mockup -->
+    <div class="terminal-wrapper">
+      <div class="terminal">
+        <div class="terminal-bar">
+          <span class="dot dot-r"></span>
+          <span class="dot dot-y"></span>
+          <span class="dot dot-g"></span>
+          <span class="terminal-title">app.py — context memory core</span>
+        </div>
+        <div class="terminal-body">
+          <div><span class="t-comment"># The secret: every message sends full conversation history</span></div>
+          <div>&nbsp;</div>
+          <div><span class="t-keyword">def</span> <span class="t-fn">chat</span>():</div>
+          <div>&nbsp;&nbsp;&nbsp;&nbsp;<span class="t-var">session_id</span> = request.json.<span class="t-fn">get</span>(<span class="t-string">"session_id"</span>)</div>
+          <div>&nbsp;&nbsp;&nbsp;&nbsp;<span class="t-var">sessions</span>[session_id].<span class="t-fn">append</span>({ <span class="t-string">"role"</span>: <span class="t-string">"user"</span>, <span class="t-string">"content"</span>: msg })</div>
+          <div>&nbsp;</div>
+          <div>&nbsp;&nbsp;&nbsp;&nbsp;<span class="t-comment"># Full history passed → model sees everything → context memory ✓</span></div>
+          <div>&nbsp;&nbsp;&nbsp;&nbsp;<span class="t-var">response</span> = client.messages.<span class="t-fn">create</span>(</div>
+          <div>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="t-var">model</span>=<span class="t-string">"claude-sonnet-4-20250514"</span>,</div>
+          <div>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="t-var">messages</span>=<span class="t-var">sessions</span>[session_id]  <span class="t-comment"># ← THIS is context memory</span></div>
+          <div>&nbsp;&nbsp;&nbsp;&nbsp;)</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<div class="divider"></div>
+
+<!-- FEATURES -->
+<section class="section" id="features">
+  <div class="section-label">// capabilities</div>
+  <h2 class="section-title">Built to remember.<br>Designed to understand.</h2>
+  <p class="section-sub">Every concept applied here was learned hands-on during the internship — from Python basics to transformer architectures.</p>
+
+  <div class="features-grid">
+    <div class="feature-card">
+      <div class="feature-icon">🧠</div>
+      <div class="feature-title">Context Memory</div>
+      <div class="feature-desc">Maintains full conversation history client-side and sends it with every API request. The model never forgets what you said.</div>
+      <span class="feature-tag">Core Feature</span>
+    </div>
+    <div class="feature-card">
+      <div class="feature-icon">⚡</div>
+      <div class="feature-title">Real-time Responses</div>
+      <div class="feature-desc">Flask REST API backend with async fetch calls. Typing indicators, smooth animations, and instant feedback on every message.</div>
+      <span class="feature-tag">Flask + Fetch API</span>
+    </div>
+    <div class="feature-card">
+      <div class="feature-icon">📤</div>
+      <div class="feature-title">Export Conversations</div>
+      <div class="feature-desc">Download your entire chat history as a JSON file, including timestamps and full conversation metadata.</div>
+      <span class="feature-tag">Session Management</span>
+    </div>
+    <div class="feature-card">
+      <div class="feature-icon">🔄</div>
+      <div class="feature-title">Session Control</div>
+      <div class="feature-desc">Clear memory to start fresh anytime. Memory turn counter shows exactly how much context the model currently holds.</div>
+      <span class="feature-tag">State Management</span>
+    </div>
+    <div class="feature-card">
+      <div class="feature-icon">🎯</div>
+      <div class="feature-title">Custom System Prompt</div>
+      <div class="feature-desc">ARIA has a carefully crafted system prompt that gives it a distinct personality and deep domain knowledge from the internship.</div>
+      <span class="feature-tag">Prompt Engineering</span>
+    </div>
+    <div class="feature-card">
+      <div class="feature-icon">📋</div>
+      <div class="feature-title">Markdown Rendering</div>
+      <div class="feature-desc">Responses support bold, italic, code blocks, and lists — rendered beautifully in the chat window for readable output.</div>
+      <span class="feature-tag">Rich Text</span>
+    </div>
+  </div>
+</section>
+
+<!-- HOW IT WORKS -->
+<section class="how-section" id="how">
+  <div class="how-inner">
+    <div class="section-label">// architecture</div>
+    <h2 class="section-title">How context memory works</h2>
+    <p class="section-sub">LLMs are stateless — they have no built-in memory. We implement it by maintaining conversation history and replaying it with every request.</p>
+
+    <div class="steps">
+      <div class="step">
+        <div class="step-num">01</div>
+        <div class="step-title">User sends message</div>
+        <div class="step-desc">The message is appended to the in-memory session history stored on the Flask server.</div>
+      </div>
+      <div class="step">
+        <div class="step-num">02</div>
+        <div class="step-title">History is replayed</div>
+        <div class="step-desc">The full conversation history (all prior turns) is sent with each new API call to Claude.</div>
+      </div>
+      <div class="step">
+        <div class="step-num">03</div>
+        <div class="step-title">Model responds</div>
+        <div class="step-desc">Claude reads all previous messages as context and generates a response that accounts for the entire conversation.</div>
+      </div>
+      <div class="step">
+        <div class="step-num">04</div>
+        <div class="step-title">Reply stored</div>
+        <div class="step-desc">The assistant's response is appended to history, growing the context for the next turn.</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- TECH STACK -->
+<section class="stack-section" id="stack">
+  <div class="section-label">// built with</div>
+  <h2 class="section-title">Technology stack</h2>
+  <p class="section-sub">Every tool used was part of the 16-week SuprMentr AI internship curriculum.</p>
+
+  <div class="stack-grid">
+    <div class="stack-pill"><span class="pill-dot" style="background:#3572A5"></span> Python 3.12</div>
+    <div class="stack-pill"><span class="pill-dot" style="background:#000000"></span> Flask 3.x</div>
+    <div class="stack-pill"><span class="pill-dot" style="background:#7c6cff"></span> Anthropic Claude API</div>
+    <div class="stack-pill"><span class="pill-dot" style="background:#e34c26"></span> HTML5 + CSS3</div>
+    <div class="stack-pill"><span class="pill-dot" style="background:#f7df1e"></span> Vanilla JavaScript</div>
+    <div class="stack-pill"><span class="pill-dot" style="background:#ff6cb4"></span> Prompt Engineering</div>
+    <div class="stack-pill"><span class="pill-dot" style="background:#45e5b8"></span> REST API Design</div>
+    <div class="stack-pill"><span class="pill-dot" style="background:#4285f4"></span> Session Management</div>
+    <div class="stack-pill"><span class="pill-dot" style="background:#f7931e"></span> JSON / Fetch API</div>
+    <div class="stack-pill"><span class="pill-dot" style="background:#6e5494"></span> Git + GitHub</div>
+  </div>
+</section>
+
+<!-- CTA -->
+<section class="cta-section">
+  <div class="cta-bg"></div>
+  <h2 class="cta-title">Ready to chat?</h2>
+  <p class="cta-sub">Ask ARIA anything. It will remember your entire conversation.</p>
+  <a href="/chat" class="btn-primary" style="font-size:1.05rem; padding: 1rem 2.5rem;">
+    Open Chatbot →
+  </a>
+</section>
+
+<footer>
+  <div>ARIA — Chatbot with Context Memory</div>
+  <div>Built by Abhishek | SuprMentr AI Internship 2026</div>
+  <a href="https://github.com/Abhishek0086/Chatbot-With-ContextMemory" target="_blank" style="color: var(--muted); text-decoration: none;">GitHub ↗</a>
+</footer>
+
+</body>
+</html>
